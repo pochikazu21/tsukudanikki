@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>つくだにっき</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --text-soft: #999;
+  --accent: #2d5a3d;
+  --accent-light: #e8f0ea;
+  --border: #e5e2db;
+  --mono: 'DM Mono', monospace;
+  --serif: 'Noto Serif JP', serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-h: 60px;
+}
+
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--serif);
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+
+/* SCREENS */
+.screen { display: none; flex-direction: column; flex: 1; overflow: hidden; padding-bottom: var(--nav-h); }
+.screen.active { display: flex; }
+
+/* BOTTOM NAV */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: calc(var(--nav-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--surface); border-top: 1px solid var(--border);
+  display: flex; z-index: 200;
+}
+.nav-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; cursor: pointer; color: var(--text-soft); transition: color .15s;
+  -webkit-tap-highlight-color: transparent; padding-top: 4px;
+}
+.nav-item.active { color: var(--accent); }
+.nav-icon { font-size: 22px; line-height: 1; }
+.nav-label { font-family: var(--mono); font-size: 10px; letter-spacing: .04em; }
+
+/* FAB */
+.fab {
+  position: fixed; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px); right: 20px;
+  width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #fff;
+  font-size: 28px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(45,90,61,.35); z-index: 199;
+  -webkit-tap-highlight-color: transparent; transition: transform .1s, box-shadow .1s;
+}
+.fab:active { transform: scale(.93); box-shadow: 0 2px 8px rgba(45,90,61,.3); }
+
+/* LIST */
+.list-header {
+  padding: calc(var(--safe-top) + 16px) 16px 12px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.list-header h1 { font-size: 22px; font-weight: 500; color: var(--accent); letter-spacing: .04em; margin-bottom: 10px; }
+.search-box {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 9px 14px;
+}
+.search-box input {
+  border: none; outline: none; font-family: var(--mono); font-size: 14px;
+  background: transparent; width: 100%; color: var(--text);
+}
+.search-icon { color: var(--text-soft); font-size: 15px; flex-shrink: 0; }
+.entries-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 0; }
+.entry-item {
+  display: flex; align-items: center; padding: 14px 16px;
+  border-bottom: 1px solid var(--border); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; background: var(--surface); gap: 12px; transition: background .1s;
+}
+.entry-item:active { background: var(--accent-light); }
+.entry-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; opacity: .4; }
+.entry-info { flex: 1; min-width: 0; }
+.entry-date { font-family: var(--mono); font-size: 11px; color: var(--text-soft); margin-bottom: 3px; }
+.entry-preview { font-size: 15px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.entry-arrow { color: var(--border); font-size: 18px; flex-shrink: 0; }
+.empty-list { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 24px; color: var(--text-soft); gap: 12px; text-align: center; }
+.empty-list .icon { font-size: 48px; }
+.empty-list p { font-size: 14px; line-height: 1.7; white-space: pre-line; }
+
+/* EDITOR */
+.editor-topbar {
+  display: flex; align-items: center;
+  padding: calc(var(--safe-top) + 10px) 12px 10px;
+  background: var(--surface); border-bottom: 1px solid var(--border); gap: 8px;
+}
+.topbar-back {
+  background: none; border: none; font-size: 26px; cursor: pointer;
+  color: var(--accent); padding: 2px 8px 2px 0;
+  -webkit-tap-highlight-color: transparent; flex-shrink: 0; line-height: 1;
+}
+.editor-date-input {
+  font-family: var(--mono); font-size: 13px; color: var(--text-soft);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px;
+  background: var(--bg); outline: none; flex-shrink: 0;
+}
+.editor-date-input:focus { border-color: var(--accent); }
+.topbar-save {
+  margin-left: auto; font-family: var(--mono); font-size: 14px;
+  padding: 9px 20px; border-radius: 10px; background: var(--accent);
+  color: #fff; border: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; flex-shrink: 0;
+}
+.topbar-save:active { background: #234a32; }
+.editor-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--surface); }
+.editor-title-input {
+  border: none; outline: none; font-family: var(--serif); font-size: 20px; font-weight: 500;
+  color: var(--text); padding: 20px 20px 10px; background: transparent; width: 100%; display: block;
+}
+.editor-title-input::placeholder { color: #ccc; }
+.editor-divider { height: 1px; background: var(--border); margin: 0 20px; }
+textarea.editor-body {
+  display: block; width: 100%; min-height: 60vh; padding: 16px 20px 120px;
+  border: none; outline: none; resize: none; font-family: var(--serif);
+  font-size: 16px; line-height: 1.9; color: var(--text); background: transparent;
+  -webkit-appearance: none;
+}
+.editor-meta {
+  position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 20px; background: var(--surface); border-top: 1px solid var(--border);
+}
+.char-count { font-family: var(--mono); font-size: 11px; color: var(--text-soft); }
+.delete-btn {
+  font-family: var(--mono); font-size: 12px; padding: 7px 16px; border-radius: 8px;
+  border: 1px solid #e0a0a0; background: none; color: #c0392b; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* CALENDAR */
+.cal-topbar { padding: calc(var(--safe-top) + 16px) 16px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.cal-topbar h1 { font-size: 22px; font-weight: 500; color: var(--accent); letter-spacing: .04em; }
+.cal-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; }
+.calendar-card { background: var(--surface); border-radius: 16px; border: 1px solid var(--border); overflow: hidden; }
+.cal-nav-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; }
+.cal-month { font-family: var(--mono); font-size: 14px; letter-spacing: .08em; }
+.cal-btn { background: none; border: none; font-size: 22px; color: var(--text-soft); cursor: pointer; padding: 4px 10px; -webkit-tap-highlight-color: transparent; }
+.cal-grid { display: grid; grid-template-columns: repeat(7,1fr); padding: 0 8px 12px; gap: 2px; }
+.cal-dow { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-soft); padding: 6px 0; }
+.cal-day {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 13px; border-radius: 50%; cursor: pointer;
+  position: relative; -webkit-tap-highlight-color: transparent; transition: background .1s;
+}
+.cal-day:active:not(.empty) { background: var(--bg); }
+.cal-day.has-entry::after { content: ''; position: absolute; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+.cal-day.today { color: var(--accent); font-weight: 500; }
+.cal-day.selected { background: var(--accent); color: #fff; }
+.cal-day.selected::after { background: rgba(255,255,255,.7); }
+.cal-day.empty { pointer-events: none; }
+.cal-recent { margin-top: 16px; }
+.cal-recent-title { font-family: var(--mono); font-size: 11px; color: var(--text-soft); letter-spacing: .06em; margin-bottom: 8px; padding: 0 4px; }
+.cal-entry-card { background: var(--surface); border-radius: 12px; margin-bottom: 6px; border: 1px solid var(--border); overflow: hidden; }
+
+/* DRIVE */
+.drive-topbar { padding: calc(var(--safe-top) + 16px) 16px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.drive-topbar h1 { font-size: 22px; font-weight: 500; color: var(--accent); letter-spacing: .04em; }
+.drive-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.drive-card { background: var(--surface); border-radius: 16px; border: 1px solid var(--border); padding: 20px; }
+.drive-card h2 { font-size: 15px; font-weight: 500; margin-bottom: 6px; }
+.drive-card p { font-size: 13px; color: var(--text-soft); line-height: 1.7; margin-bottom: 16px; }
+.drive-auth-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.drive-email { font-family: var(--mono); font-size: 12px; color: var(--text-soft); }
+.drive-actions { display: flex; flex-direction: column; gap: 8px; }
+.drive-action-btn {
+  display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--bg); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; width: 100%; text-align: left; transition: background .1s;
+}
+.drive-action-btn:active { background: var(--accent-light); }
+.drive-action-icon { font-size: 24px; flex-shrink: 0; }
+.drive-action-text strong { display: block; font-size: 14px; font-weight: 500; margin-bottom: 2px; font-family: var(--serif); }
+.drive-action-text span { font-size: 12px; color: var(--text-soft); font-family: var(--mono); }
+.drive-status { font-family: var(--mono); font-size: 12px; padding: 12px 14px; border-radius: 10px; background: var(--bg); color: var(--text-soft); white-space: pre-wrap; line-height: 1.6; display: none; margin-top: 12px; }
+.drive-status.show { display: block; }
+.drive-status.ok { color: var(--accent); background: var(--accent-light); }
+.drive-status.err { color: #c0392b; background: #fdf0ef; }
+
+.btn { font-family: var(--mono); font-size: 13px; padding: 10px 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn:active { opacity: .8; }
+
+/* TOAST */
+#toast {
+  position: fixed; bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px);
+  left: 50%; transform: translateX(-50%) translateY(10px);
+  background: rgba(26,26,26,.9); color: #fff; font-family: var(--mono); font-size: 13px;
+  padding: 10px 20px; border-radius: 20px; opacity: 0; pointer-events: none; transition: all .2s;
+  z-index: 999; white-space: nowrap; backdrop-filter: blur(4px);
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- LIST -->
+<div class="screen active" id="screenList">
+  <div class="list-header">
+    <h1>つくだにっき</h1>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="検索..." oninput="renderList()" autocomplete="off">
+    </div>
+  </div>
+  <div class="entries-scroll" id="entriesList"></div>
+</div>
+
+<!-- EDITOR -->
+<div class="screen" id="screenEditor">
+  <div class="editor-topbar">
+    <button class="topbar-back" onclick="backToList()">‹</button>
+    <input class="editor-date-input" id="entryDateInput" type="date">
+    <button class="topbar-save" onclick="saveEntry()">保存</button>
+  </div>
+  <div class="editor-scroll">
+    <input class="editor-title-input" id="entryTitle" type="text" placeholder="タイトル（任意）" autocomplete="off" style="display:none">
+    <div class="editor-divider" style="display:none"></div>
+    <textarea class="editor-body" id="entryBody" placeholder="今日のことを書いてみてください…" oninput="updateCharCount()"></textarea>
+  </div>
+  <div class="editor-meta">
+    <span class="char-count" id="charCount">0 文字</span>
+    <button class="delete-btn hidden" id="deleteBtn" onclick="deleteEntry()">削除</button>
+  </div>
+</div>
+
+<!-- CALENDAR -->
+<div class="screen" id="screenCalendar">
+  <div class="cal-topbar"><h1>カレンダー</h1></div>
+  <div class="cal-scroll">
+    <div class="calendar-card">
+      <div class="cal-nav-row">
+        <button class="cal-btn" onclick="calPrev()">‹</button>
+        <span class="cal-month" id="calMonthLabel"></span>
+        <button class="cal-btn" onclick="calNext()">›</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+    </div>
+    <div class="cal-recent">
+      <div class="cal-recent-title">RECENT</div>
+      <div id="calRecentList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- DRIVE -->
+<div class="screen" id="screenDrive">
+  <div class="drive-topbar"><h1>Drive</h1></div>
+  <div class="drive-scroll">
+    <div class="drive-card">
+      <h2>Googleアカウント</h2>
+      <p>ログインするとバックアップ・復元が使えます。</p>
+      <div class="drive-auth-row">
+        <button class="btn primary" id="driveAuthBtn" onclick="driveSignIn()">Googleでログイン</button>
+        <span class="drive-email" id="driveUser"></span>
+      </div>
+    </div>
+    <div class="drive-card">
+      <h2>JSONインポート</h2>
+      <p>Claudeが変換したJSONファイルを読み込んで日記データを一括インポートできます。</p>
+      <button class="drive-action-btn" onclick="document.getElementById('jsonFileInput').click()">
+        <span class="drive-action-icon">📂</span>
+        <div class="drive-action-text"><strong>JSONファイルを選択</strong><span>変換済みのdiary.jsonを読み込む</span></div>
+      </button>
+      <input type="file" id="jsonFileInput" accept=".json" style="display:none" onchange="importJSON(event)">
+      <div class="drive-status" id="importStatus"></div>
+    </div>
+    <div class="drive-card">
+      <h2>Google Drive バックアップ・復元</h2>
+      <p>日記データをGoogle DriveにJSON形式で保存・復元できます。</p>
+      <div class="drive-actions">
+        <button class="drive-action-btn" onclick="backupToDrive()">
+          <span class="drive-action-icon">📤</span>
+          <div class="drive-action-text"><strong>バックアップ</strong><span>Driveに保存する</span></div>
+        </button>
+        <button class="drive-action-btn" onclick="restoreFromDrive()">
+          <span class="drive-action-icon">📥</span>
+          <div class="drive-action-text"><strong>復元</strong><span>最新バックアップから読み込む</span></div>
+        </button>
+        <button class="drive-action-btn" onclick="listDriveFiles()">
+          <span class="drive-action-icon">📋</span>
+          <div class="drive-action-text"><strong>ファイル一覧</strong><span>保存済みバックアップを確認</span></div>
+        </button>
+      </div>
+      <div class="drive-status" id="driveStatus"></div>
+    </div>
+  </div>
+</div>
+
+<button class="fab" id="fab" onclick="newEntry()">＋</button>
+
+<nav class="bottom-nav">
+  <div class="nav-item active" id="nav-list" onclick="switchScreen('list')">
+    <span class="nav-icon">📋</span><span class="nav-label">一覧</span>
+  </div>
+  <div class="nav-item" id="nav-calendar" onclick="switchScreen('calendar')">
+    <span class="nav-icon">📅</span><span class="nav-label">カレンダー</span>
+  </div>
+  <div class="nav-item" id="nav-drive" onclick="switchScreen('drive')">
+    <span class="nav-icon">☁</span><span class="nav-label">Drive</span>
+  </div>
+</nav>
+
+<div id="toast"></div>
+
+<script>
+let entries = JSON.parse(localStorage.getItem('diary_entries') || '[]');
+let currentId = null;
+let prevScreen = 'list';
+const today = new Date();
+let calYear = today.getFullYear(), calMonth = today.getMonth();
+
+function switchScreen(name) {
+  ['list','calendar','drive'].forEach(s => {
+    document.getElementById('screen' + cap(s)).classList.toggle('active', s === name);
+    document.getElementById('nav-' + s).classList.toggle('active', s === name);
+  });
+  document.getElementById('screenEditor').classList.remove('active');
+  document.getElementById('fab').classList.toggle('hidden', name !== 'list');
+  prevScreen = name;
+  if (name === 'calendar') { renderCal(); renderCalRecent(); }
+}
+function cap(s) { return s[0].toUpperCase() + s.slice(1); }
+
+function openEditor() {
+  ['list','calendar','drive'].forEach(s => document.getElementById('screen'+cap(s)).classList.remove('active'));
+  document.getElementById('screenEditor').classList.add('active');
+  document.getElementById('fab').classList.add('hidden');
+}
+function backToList() {
+  document.getElementById('screenEditor').classList.remove('active');
+  switchScreen(prevScreen || 'list');
+}
+
+/* Google API */
+const CLIENT_ID = '974572451965-aijcoc6ug8b7h065foj0tq48d4dcbpsb.apps.googleusercontent.com';
+const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+let gapiReady = false, driveSignedIn = false;
+
+function initGapi() {
+  gapi.load('client:auth2', async () => {
+    try {
+      await gapi.client.init({ clientId: CLIENT_ID, scope: SCOPE, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
+      gapiReady = true;
+      const auth = gapi.auth2.getAuthInstance();
+      auth.isSignedIn.listen(updateSignInStatus);
+      updateSignInStatus(auth.isSignedIn.get());
+    } catch(e) {}
+  });
+}
+function updateSignInStatus(signedIn) {
+  driveSignedIn = signedIn;
+  const btn = document.getElementById('driveAuthBtn');
+  const userEl = document.getElementById('driveUser');
+  if (signedIn) {
+    userEl.textContent = gapi.auth2.getAuthInstance().currentUser.get().getBasicProfile().getEmail();
+    btn.textContent = 'ログアウト'; btn.onclick = driveSignOut;
+  } else {
+    userEl.textContent = ''; btn.textContent = 'Googleでログイン'; btn.onclick = driveSignIn;
+  }
+}
+function driveSignIn() {
+  if (!CLIENT_ID) { showDriveStatus('CLIENT_ID が未設定です。コード内の CLIENT_ID を設定してください。', 'err'); return; }
+  if (gapiReady) gapi.auth2.getAuthInstance().signIn();
+}
+function driveSignOut() { if (gapiReady) gapi.auth2.getAuthInstance().signOut(); }
+
+async function backupToDrive() {
+  if (!driveSignedIn) { toast('先にGoogleでログインしてください'); return; }
+  const filename = `diary-backup-${dateStr(new Date())}.json`;
+  const boundary = '-------314159265358979323846';
+  const d = '\r\n--' + boundary + '\r\n', close = '\r\n--' + boundary + '--';
+  const body = d + 'Content-Type: application/json\r\n\r\n' + JSON.stringify({ name: filename, mimeType: 'application/json', parents: ['root'] }) + d + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(entries, null, 2) + close;
+  try {
+    await gapi.client.request({ path: 'https://www.googleapis.com/upload/drive/v3/files', method: 'POST', params: { uploadType: 'multipart' }, headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' }, body });
+    showDriveStatus(`✓ バックアップ完了：${filename}`, 'ok'); toast('Driveにバックアップしました');
+  } catch(e) { showDriveStatus('エラー：' + (e.result?.error?.message || e), 'err'); }
+}
+async function restoreFromDrive() {
+  if (!driveSignedIn) { toast('先にGoogleでログインしてください'); return; }
+  try {
+    const res = await gapi.client.drive.files.list({ q: "name contains 'diary-backup' and mimeType='application/json' and trashed=false", orderBy: 'modifiedTime desc', pageSize: 10, fields: 'files(id,name,modifiedTime)' });
+    const files = res.result.files;
+    if (!files.length) { showDriveStatus('バックアップファイルが見つかりません', 'err'); return; }
+    const latest = files[0];
+    const content = await gapi.client.drive.files.get({ fileId: latest.id, alt: 'media' });
+    if (confirm(`"${latest.name}" から復元しますか？\n現在のデータは上書きされます。`)) {
+      entries = JSON.parse(content.body); saveLocal(); renderList();
+      showDriveStatus(`✓ 復元完了：${latest.name}`, 'ok'); toast('復元しました');
+    }
+  } catch(e) { showDriveStatus('エラー：' + (e.result?.error?.message || e), 'err'); }
+}
+async function listDriveFiles() {
+  if (!driveSignedIn) { toast('先にGoogleでログインしてください'); return; }
+  try {
+    const res = await gapi.client.drive.files.list({ q: "name contains 'diary-backup' and mimeType='application/json' and trashed=false", orderBy: 'modifiedTime desc', pageSize: 10, fields: 'files(id,name,modifiedTime)' });
+    const files = res.result.files;
+    showDriveStatus(files.length ? files.map(f => `• ${f.name}  (${f.modifiedTime.slice(0,10)})`).join('\n') : 'バックアップファイルなし', '');
+  } catch(e) { showDriveStatus('エラー：' + (e.result?.error?.message || e), 'err'); }
+}
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data)) throw new Error('配列形式のJSONではありません');
+      const valid = data.filter(x => x.date && (x.body || x.title));
+      if (!valid.length) throw new Error('有効なエントリが見つかりませんでした');
+      const existingIds = new Set(entries.map(x => x.id));
+      let added = 0, skipped = 0;
+      valid.forEach(e => {
+        if (existingIds.has(e.id)) { skipped++; return; }
+        entries.push(e); added++;
+      });
+      entries.sort((a,b) => new Date(b.date) - new Date(a.date));
+      saveLocal(); renderList();
+      const statusEl = document.getElementById('importStatus');
+      statusEl.textContent = `✓ インポート完了：${added}件追加、${skipped}件スキップ（重複）`;
+      statusEl.className = 'drive-status show ok';
+      toast(`${added}件の日記をインポートしました`);
+    } catch(err) {
+      const statusEl = document.getElementById('importStatus');
+      statusEl.textContent = 'エラー：' + err.message;
+      statusEl.className = 'drive-status show err';
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function showDriveStatus(msg, type) {
+  const el = document.getElementById('driveStatus');
+  el.textContent = msg; el.className = 'drive-status show' + (type ? ' ' + type : '');
+}
+
+/* Entries */
+function saveLocal() { localStorage.setItem('diary_entries', JSON.stringify(entries)); }
+
+function newEntry(ds) {
+  currentId = null;
+  document.getElementById('entryTitle').value = '';
+  document.getElementById('entryBody').value = '';
+  document.getElementById('entryDateInput').value = ds || toInputDate(new Date());
+  document.getElementById('deleteBtn').classList.add('hidden');
+  updateCharCount(); openEditor();
+  setTimeout(() => document.getElementById('entryBody').focus(), 150);
+}
+function loadEntry(id) {
+  const e = entries.find(x => x.id === id); if (!e) return;
+  currentId = id;
+  document.getElementById('entryTitle').value = e.title || '';
+  document.getElementById('entryBody').value = e.body || '';
+  document.getElementById('entryDateInput').value = toInputDate(new Date(e.date));
+  document.getElementById('deleteBtn').classList.remove('hidden');
+  updateCharCount(); openEditor();
+}
+function saveEntry() {
+  const title = document.getElementById('entryTitle').value.trim();
+  const body = document.getElementById('entryBody').value.trim();
+  if (!body && !title) { toast('内容を入力してください'); return; }
+  const chosenDate = document.getElementById('entryDateInput').value || toInputDate(new Date());
+  if (currentId) {
+    const e = entries.find(x => x.id === currentId);
+    e.date = new Date(chosenDate + 'T12:00:00').toISOString();
+    e.title = title; e.body = body; e.updatedAt = new Date().toISOString();
+  } else {
+    const e = { id: Date.now().toString(), date: new Date(chosenDate + 'T12:00:00').toISOString(), title, body, updatedAt: new Date().toISOString() };
+    entries.unshift(e); currentId = e.id;
+    document.getElementById('deleteBtn').classList.remove('hidden');
+  }
+  entries.sort((a,b) => new Date(b.date) - new Date(a.date));
+  saveLocal(); renderList(); toast('保存しました');
+}
+function deleteEntry() {
+  if (!currentId || !confirm('この日記を削除しますか？')) return;
+  entries = entries.filter(x => x.id !== currentId);
+  saveLocal(); renderList(); backToList(); toast('削除しました');
+}
+function renderList() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = entries.filter(e => !q || (e.title||'').toLowerCase().includes(q) || (e.body||'').toLowerCase().includes(q));
+  const el = document.getElementById('entriesList');
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty-list"><div class="icon">${q?'🔍':'📔'}</div><p>${q?'「'+q+'」に一致する日記がありません':'右下の ＋ ボタンで\n最初の日記を書いてみましょう'}</p></div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(e => `
+    <div class="entry-item" onclick="loadEntry('${e.id}')">
+      <div class="entry-dot"></div>
+      <div class="entry-info">
+        <div class="entry-date">${fmtDateShort(new Date(e.date))}</div>
+        <div class="entry-preview">${e.title || e.body || '（無題）'}</div>
+      </div>
+      <span class="entry-arrow">›</span>
+    </div>`).join('');
+}
+function updateCharCount() {
+  document.getElementById('charCount').textContent = document.getElementById('entryBody').value.length.toLocaleString() + ' 文字';
+}
+
+/* Calendar */
+function renderCal() {
+  document.getElementById('calMonthLabel').textContent = `${calYear} / ${String(calMonth+1).padStart(2,'0')}`;
+  const dows = ['日','月','火','水','木','金','土'];
+  let html = dows.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  const first = new Date(calYear,calMonth,1).getDay();
+  const days = new Date(calYear,calMonth+1,0).getDate();
+  const todayDs = dateStr(today);
+  const entryDates = new Set(entries.map(e=>dateStr(new Date(e.date))));
+  for (let i=0;i<first;i++) html+=`<div class="cal-day empty"></div>`;
+  for (let d=1;d<=days;d++) {
+    const ds=`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const cls=['cal-day', ds===todayDs?'today':'', entryDates.has(ds)?'has-entry':''].filter(Boolean).join(' ');
+    html+=`<div class="${cls}" onclick="calDayClick('${ds}')">${d}</div>`;
+  }
+  document.getElementById('calGrid').innerHTML = html;
+}
+function renderCalRecent() {
+  document.getElementById('calRecentList').innerHTML = entries.slice(0,5).map(e=>`
+    <div class="entry-item cal-entry-card" onclick="loadEntry('${e.id}')">
+      <div class="entry-dot"></div>
+      <div class="entry-info">
+        <div class="entry-date">${fmtDateShort(new Date(e.date))}</div>
+        <div class="entry-preview">${e.title||e.body||'（無題）'}</div>
+      </div><span class="entry-arrow">›</span>
+    </div>`).join('');
+}
+function calPrev() { calMonth--; if(calMonth<0){calMonth=11;calYear--;} renderCal(); }
+function calNext() { calMonth++; if(calMonth>11){calMonth=0;calYear++;} renderCal(); }
+function calDayClick(ds) {
+  const e = entries.find(x=>dateStr(new Date(x.date))===ds);
+  if(e) loadEntry(e.id); else newEntry(ds);
+}
+
+/* Helpers */
+function toInputDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function fmtDateShort(d) { return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} (${['日','月','火','水','木','金','土'][d.getDay()]})`; }
+function dateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function toast(msg) {
+  const el=document.getElementById('toast'); el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2200);
+}
+
+/* Init */
+document.getElementById('entryDateInput').value = toInputDate(today);
+renderList();
+window.onload = () => { if(typeof gapi!=='undefined') initGapi(); };
+</script>
+<script async defer src="https://apis.google.com/js/api.js" onload="if(typeof initGapi==='function')initGapi()"></script>
+</body>
+</html>
