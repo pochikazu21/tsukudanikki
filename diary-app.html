@@ -207,6 +207,27 @@ textarea.editor-body {
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .hidden { display: none !important; }
 
+  /* Reminder banner */
+  .reminder-banner {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: #fffbea;
+    border-bottom: 1px solid #f0e08a;
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #7a6000;
+    font-family: var(--serif);
+  }
+  .reminder-banner.show { display: flex; }
+  .reminder-banner .reminder-text { flex: 1; }
+  .reminder-close {
+    background: none; border: none; font-size: 18px;
+    color: #aaa; cursor: pointer; padding: 0 4px; flex-shrink: 0;
+  }
+
+
   /* Swipe hint */
   .swipe-hint {
     position: absolute;
@@ -236,6 +257,10 @@ textarea.editor-body {
       <span class="search-icon">🔍</span>
       <input type="text" id="searchInput" placeholder="検索..." oninput="renderList()" autocomplete="off">
     </div>
+  </div>
+  <div class="reminder-banner" id="reminderBanner">
+    <span class="reminder-text">☁ 今日は日曜日です！Driveにバックアップしましょう</span>
+    <button class="reminder-close" onclick="dismissReminder()">×</button>
   </div>
   <div class="entries-scroll" id="entriesList"></div>
 </div>
@@ -445,40 +470,65 @@ async function driveRequest(url, options = {}) {
 
 async function backupToDrive() {
   if (!accessToken) { toast('先にGoogleでログインしてください'); return; }
-  const filename = `diary-backup-${dateStr(new Date())}.json`;
+  const BACKUP_FILENAME = 'tsukudanikki-backup.json';
+  const content = JSON.stringify(entries, null, 2);
   const boundary = '-------314159265358979323846';
   const d = '\r\n--' + boundary + '\r\n', close = '\r\n--' + boundary + '--';
-  const body = d + 'Content-Type: application/json\r\n\r\n' + JSON.stringify({ name: filename, mimeType: 'application/json', parents: ['root'] }) + d + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(entries, null, 2) + close;
   try {
-    await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-      method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' }, body
-    });
-    showDriveStatus(`✓ バックアップ完了：${filename}`, 'ok'); toast('Driveにバックアップしました');
+    // 既存ファイルを検索
+    const searchRes = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${BACKUP_FILENAME}'+and+trashed%3Dfalse&fields=files(id,name)`
+    );
+    const { files } = await searchRes.json();
+    if (files && files.length > 0) {
+      // 上書き更新
+      const fileId = files[0].id;
+      await driveRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: content }
+      );
+    } else {
+      // 新規作成
+      const body = d + 'Content-Type: application/json\r\n\r\n' + JSON.stringify({ name: BACKUP_FILENAME, mimeType: 'application/json', parents: ['root'] }) + d + 'Content-Type: application/json\r\n\r\n' + content + close;
+      await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' }, body
+      });
+    }
+    localStorage.setItem('lastBackupDate', dateStr(new Date()));
+    showDriveStatus('✓ バックアップ完了（上書き保存）：' + BACKUP_FILENAME, 'ok');
+    toast('Driveにバックアップしました');
+    dismissReminder();
   } catch(e) { showDriveStatus('エラー：' + e.message, 'err'); }
 }
 
 async function restoreFromDrive() {
   if (!accessToken) { toast('先にGoogleでログインしてください'); return; }
+  const BACKUP_FILENAME = 'tsukudanikki-backup.json';
   try {
-    const res = await driveRequest("https://www.googleapis.com/drive/v3/files?q=name+contains+'diary-backup'+and+mimeType%3D'application%2Fjson'+and+trashed%3Dfalse&orderBy=modifiedTime+desc&pageSize=10&fields=files(id,name,modifiedTime)");
-    const { files } = await res.json();
-    if (!files.length) { showDriveStatus('バックアップファイルが見つかりません', 'err'); return; }
-    const latest = files[0];
-    const content = await driveRequest(`https://www.googleapis.com/drive/v3/files/${latest.id}?alt=media`);
+    const searchRes = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${BACKUP_FILENAME}'+and+trashed%3Dfalse&fields=files(id,name,modifiedTime)`
+    );
+    const { files } = await searchRes.json();
+    if (!files || !files.length) { showDriveStatus('バックアップファイルが見つかりません', 'err'); return; }
+    const file = files[0];
+    const content = await driveRequest(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
     const data = await content.json();
-    if (confirm(`"${latest.name}" から復元しますか？\n現在のデータは上書きされます。`)) {
+    if (confirm(`"${BACKUP_FILENAME}" から復元しますか？\n現在のデータは上書きされます。`)) {
       entries = data; saveLocal(); renderList();
-      showDriveStatus(`✓ 復元完了：${latest.name}`, 'ok'); toast('復元しました');
+      showDriveStatus(`✓ 復元完了：${BACKUP_FILENAME}`, 'ok'); toast('復元しました');
     }
   } catch(e) { showDriveStatus('エラー：' + e.message, 'err'); }
 }
 
 async function listDriveFiles() {
   if (!accessToken) { toast('先にGoogleでログインしてください'); return; }
+  const BACKUP_FILENAME = 'tsukudanikki-backup.json';
   try {
-    const res = await driveRequest("https://www.googleapis.com/drive/v3/files?q=name+contains+'diary-backup'+and+mimeType%3D'application%2Fjson'+and+trashed%3Dfalse&orderBy=modifiedTime+desc&pageSize=10&fields=files(id,name,modifiedTime)");
+    const res = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files?q=name%3D'${BACKUP_FILENAME}'+and+trashed%3Dfalse&fields=files(id,name,modifiedTime)`
+    );
     const { files } = await res.json();
-    showDriveStatus(files.length ? files.map(f => `• ${f.name}  (${f.modifiedTime.slice(0,10)})`).join('\n') : 'バックアップファイルなし', '');
+    showDriveStatus(files && files.length ? `• ${files[0].name}\n  最終更新: ${files[0].modifiedTime.slice(0,10)}` : 'バックアップファイルなし', files && files.length ? 'ok' : '');
   } catch(e) { showDriveStatus('エラー：' + e.message, 'err'); }
 }
 function importJSON(event) {
@@ -618,6 +668,20 @@ function calDayClick(ds) {
 }
 
 
+
+/* Reminder */
+function checkReminder() {
+  const today = new Date();
+  if (today.getDay() !== 0) return; // 0 = 日曜
+  const lastBackup = localStorage.getItem('lastBackupDate');
+  const todayStr = dateStr(today);
+  if (lastBackup === todayStr) return; // 今日すでにバックアップ済み
+  document.getElementById('reminderBanner').classList.add('show');
+}
+function dismissReminder() {
+  document.getElementById('reminderBanner').classList.remove('show');
+}
+
 /* Swipe navigation */
 (function() {
   let startX = 0, startY = 0, startTime = 0;
@@ -687,6 +751,7 @@ function toast(msg) {
 /* Init */
 document.getElementById('entryDateInput').value = toInputDate(today);
 renderList();
+checkReminder();
 // init handled by window load event above
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
