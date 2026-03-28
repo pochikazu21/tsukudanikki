@@ -351,68 +351,116 @@ function backToList() {
 /* Google API */
 const CLIENT_ID = '974572451965-aijcoc6ug8b7h065foj0tq48d4dcbpsb.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-let gapiReady = false, driveSignedIn = false;
+let accessToken = null;
+let tokenClient = null;
+let gapiLoaded = false;
 
-function initGapi() {
-  gapi.load('client:auth2', async () => {
-    try {
-      await gapi.client.init({ clientId: CLIENT_ID, scope: SCOPE, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'] });
-      gapiReady = true;
-      const auth = gapi.auth2.getAuthInstance();
-      auth.isSignedIn.listen(updateSignInStatus);
-      updateSignInStatus(auth.isSignedIn.get());
-    } catch(e) {}
+// GIS token client
+function initGIS() {
+  if (!CLIENT_ID) return;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    callback: (resp) => {
+      if (resp.error) { showDriveStatus('ログインエラー：' + resp.error, 'err'); return; }
+      accessToken = resp.access_token;
+      fetchUserInfo();
+    }
   });
 }
-function updateSignInStatus(signedIn) {
-  driveSignedIn = signedIn;
-  const btn = document.getElementById('driveAuthBtn');
-  const userEl = document.getElementById('driveUser');
-  if (signedIn) {
-    userEl.textContent = gapi.auth2.getAuthInstance().currentUser.get().getBasicProfile().getEmail();
+
+function fetchUserInfo() {
+  fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: 'Bearer ' + accessToken }
+  }).then(r => r.json()).then(info => {
+    document.getElementById('driveUser').textContent = info.email;
+    const btn = document.getElementById('driveAuthBtn');
     btn.textContent = 'ログアウト'; btn.onclick = driveSignOut;
-  } else {
-    userEl.textContent = ''; btn.textContent = 'Googleでログイン'; btn.onclick = driveSignIn;
-  }
+    showDriveStatus('✓ ログイン済み：' + info.email, 'ok');
+  });
 }
+
+function initGapiClient() {
+  gapi.load('client', async () => {
+    await gapi.client.init({});
+    await gapi.client.load('https://www.googleapis.com/discovery/v1/apis/drive/v3/rest');
+    gapiLoaded = true;
+  });
+}
+
 function driveSignIn() {
-  if (!CLIENT_ID) { showDriveStatus('CLIENT_ID が未設定です。コード内の CLIENT_ID を設定してください。', 'err'); return; }
-  if (gapiReady) gapi.auth2.getAuthInstance().signIn();
+  if (!CLIENT_ID) { showDriveStatus('CLIENT_ID が未設定です。', 'err'); return; }
+  if (!tokenClient) { showDriveStatus('Google APIの読み込み中です。少し待ってから再試行してください。', 'err'); return; }
+  if (accessToken) { tokenClient.requestAccessToken({ prompt: '' }); }
+  else { tokenClient.requestAccessToken({ prompt: 'consent' }); }
 }
-function driveSignOut() { if (gapiReady) gapi.auth2.getAuthInstance().signOut(); }
+
+function driveSignOut() {
+  if (accessToken) {
+    google.accounts.oauth2.revoke(accessToken);
+    accessToken = null;
+  }
+  document.getElementById('driveUser').textContent = '';
+  const btn = document.getElementById('driveAuthBtn');
+  btn.textContent = 'Googleでログイン'; btn.onclick = driveSignIn;
+  showDriveStatus('ログアウトしました', '');
+}
+
+window.addEventListener('load', () => {
+  initGapiClient();
+  // GISの読み込みを待つ
+  const waitGIS = setInterval(() => {
+    if (typeof google !== 'undefined' && google.accounts) {
+      clearInterval(waitGIS);
+      initGIS();
+    }
+  }, 200);
+});
+
+async function driveRequest(url, options = {}) {
+  if (!accessToken) { toast('先にGoogleでログインしてください'); return null; }
+  const res = await fetch(url, { ...options, headers: { ...options.headers, Authorization: 'Bearer ' + accessToken } });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || res.status); }
+  return res;
+}
 
 async function backupToDrive() {
-  if (!driveSignedIn) { toast('先にGoogleでログインしてください'); return; }
+  if (!accessToken) { toast('先にGoogleでログインしてください'); return; }
   const filename = `diary-backup-${dateStr(new Date())}.json`;
   const boundary = '-------314159265358979323846';
   const d = '\r\n--' + boundary + '\r\n', close = '\r\n--' + boundary + '--';
   const body = d + 'Content-Type: application/json\r\n\r\n' + JSON.stringify({ name: filename, mimeType: 'application/json', parents: ['root'] }) + d + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(entries, null, 2) + close;
   try {
-    await gapi.client.request({ path: 'https://www.googleapis.com/upload/drive/v3/files', method: 'POST', params: { uploadType: 'multipart' }, headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' }, body });
+    await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary="' + boundary + '"' }, body
+    });
     showDriveStatus(`✓ バックアップ完了：${filename}`, 'ok'); toast('Driveにバックアップしました');
-  } catch(e) { showDriveStatus('エラー：' + (e.result?.error?.message || e), 'err'); }
+  } catch(e) { showDriveStatus('エラー：' + e.message, 'err'); }
 }
+
 async function restoreFromDrive() {
-  if (!driveSignedIn) { toast('先にGoogleでログインしてください'); return; }
+  if (!accessToken) { toast('先にGoogleでログインしてください'); return; }
   try {
-    const res = await gapi.client.drive.files.list({ q: "name contains 'diary-backup' and mimeType='application/json' and trashed=false", orderBy: 'modifiedTime desc', pageSize: 10, fields: 'files(id,name,modifiedTime)' });
-    const files = res.result.files;
+    const res = await driveRequest("https://www.googleapis.com/drive/v3/files?q=name+contains+'diary-backup'+and+mimeType%3D'application%2Fjson'+and+trashed%3Dfalse&orderBy=modifiedTime+desc&pageSize=10&fields=files(id,name,modifiedTime)");
+    const { files } = await res.json();
     if (!files.length) { showDriveStatus('バックアップファイルが見つかりません', 'err'); return; }
     const latest = files[0];
-    const content = await gapi.client.drive.files.get({ fileId: latest.id, alt: 'media' });
+    const content = await driveRequest(`https://www.googleapis.com/drive/v3/files/${latest.id}?alt=media`);
+    const data = await content.json();
     if (confirm(`"${latest.name}" から復元しますか？\n現在のデータは上書きされます。`)) {
-      entries = JSON.parse(content.body); saveLocal(); renderList();
+      entries = data; saveLocal(); renderList();
       showDriveStatus(`✓ 復元完了：${latest.name}`, 'ok'); toast('復元しました');
     }
-  } catch(e) { showDriveStatus('エラー：' + (e.result?.error?.message || e), 'err'); }
+  } catch(e) { showDriveStatus('エラー：' + e.message, 'err'); }
 }
+
 async function listDriveFiles() {
-  if (!driveSignedIn) { toast('先にGoogleでログインしてください'); return; }
+  if (!accessToken) { toast('先にGoogleでログインしてください'); return; }
   try {
-    const res = await gapi.client.drive.files.list({ q: "name contains 'diary-backup' and mimeType='application/json' and trashed=false", orderBy: 'modifiedTime desc', pageSize: 10, fields: 'files(id,name,modifiedTime)' });
-    const files = res.result.files;
+    const res = await driveRequest("https://www.googleapis.com/drive/v3/files?q=name+contains+'diary-backup'+and+mimeType%3D'application%2Fjson'+and+trashed%3Dfalse&orderBy=modifiedTime+desc&pageSize=10&fields=files(id,name,modifiedTime)");
+    const { files } = await res.json();
     showDriveStatus(files.length ? files.map(f => `• ${f.name}  (${f.modifiedTime.slice(0,10)})`).join('\n') : 'バックアップファイルなし', '');
-  } catch(e) { showDriveStatus('エラー：' + (e.result?.error?.message || e), 'err'); }
+  } catch(e) { showDriveStatus('エラー：' + e.message, 'err'); }
 }
 function importJSON(event) {
   const file = event.target.files[0];
@@ -562,8 +610,9 @@ function toast(msg) {
 /* Init */
 document.getElementById('entryDateInput').value = toInputDate(today);
 renderList();
-window.onload = () => { if(typeof gapi!=='undefined') initGapi(); };
+// init handled by window load event above
 </script>
-<script async defer src="https://apis.google.com/js/api.js" onload="if(typeof initGapi==='function')initGapi()"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
 </body>
 </html>
